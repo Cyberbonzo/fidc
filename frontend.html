@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIDC - Cronograma de Cedentes</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        navy: { 900: '#0a192f', 800: '#112240', 700: '#1d3461', 600: '#233554' },
+                        cyan: { 400: '#64ffda', 500: '#45e0c0' },
+                        slate: { 100: '#ccd6f6', 200: '#a8b2d1', 300: '#8892b0' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; background: #0a192f; }
+
+        /* Glassmorphism */
+        .glass { background: rgba(17, 34, 64, 0.7); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(100, 255, 218, 0.08); }
+        .glass-card { background: rgba(17, 34, 64, 0.5); backdrop-filter: blur(12px); border: 1px solid rgba(100, 255, 218, 0.06); transition: all 0.3s ease; }
+        .glass-card:hover { border-color: rgba(100, 255, 218, 0.2); box-shadow: 0 8px 32px rgba(100, 255, 218, 0.05); transform: translateY(-2px); }
+
+        /* Animations */
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeInLeft { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        @keyframes glow { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        .animate-in { animation: fadeInUp 0.5s ease-out both; }
+        .animate-in-left { animation: fadeInLeft 0.5s ease-out both; }
+        .stagger-1 { animation-delay: 0.1s; }
+        .stagger-2 { animation-delay: 0.2s; }
+        .stagger-3 { animation-delay: 0.3s; }
+        .stagger-4 { animation-delay: 0.4s; }
+
+        .underline-anim { position: relative; }
+        .underline-anim::after {
+            content: ''; position: absolute; bottom: -4px; left: 0; width: 0; height: 2px;
+            background: linear-gradient(90deg, #64ffda, #45e0c0);
+            animation: expandWidth 1s ease-out 0.5s forwards;
+        }
+        @keyframes expandWidth { to { width: 100%; } }
+
+        /* Table */
+        .table-row { transition: all 0.2s ease; cursor: pointer; }
+        .table-row:hover { background: rgba(100, 255, 218, 0.04); transform: scale(1.001); }
+        .table-row:active { transform: scale(0.999); }
+
+        /* Sort */
+        .sort-btn { cursor: pointer; user-select: none; transition: color 0.2s; }
+        .sort-btn:hover { color: #64ffda; }
+        .sort-btn::after { content: ' \25B2\25BC'; font-size: 0.55em; opacity: 0.3; }
+        .sort-btn.asc::after { content: ' \25B2'; opacity: 1; color: #64ffda; }
+        .sort-btn.desc::after { content: ' \25BC'; opacity: 1; color: #64ffda; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #112240; }
+        ::-webkit-scrollbar-thumb { background: #233554; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64ffda33; }
+
+        /* Modal */
+        .modal-panel { animation: slideIn 0.3s ease-out; }
+
+        /* Button hover */
+        .btn-primary { transition: all 0.2s ease; position: relative; overflow: hidden; }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(100, 255, 218, 0.25); }
+        .btn-primary:active { transform: translateY(0); }
+
+        /* Input focus glow */
+        .search-input:focus { box-shadow: 0 0 0 2px rgba(100, 255, 218, 0.2); }
+
+        /* Badge pulse */
+        .badge-glow { animation: glow 2s ease-in-out infinite; }
+
+        /* Gradient text */
+        .gradient-text { background: linear-gradient(135deg, #64ffda 0%, #45e0c0 50%, #ccd6f6 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    </style>
+</head>
+<body class="text-slate-100 min-h-screen">
+
+    <!-- Navbar - Glassmorphism -->
+    <header class="glass sticky top-0 z-40 animate-in">
+        <div class="max-w-[98%] mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-cyan-500 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-navy-900" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4zM18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z"/></svg>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight">
+                        <span class="gradient-text underline-anim">Cronograma de Cedentes</span>
+                    </h1>
+                    <p class="text-slate-300 text-xs mt-0.5">Endividamento anual por cedente</p>
+                </div>
+            </div>
+            <div id="kpi-header" class="flex gap-6 text-right"></div>
+        </div>
+    </header>
+
+    <!-- Search -->
+    <div class="max-w-[98%] mx-auto px-4 mt-6 animate-in stagger-1">
+        <div class="glass-card rounded-2xl p-4 flex flex-col sm:flex-row gap-4 items-center">
+            <div class="relative flex-1 w-full">
+                <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                <input id="busca" type="text" placeholder="Buscar por CNPJ ou nome do cedente..."
+                    class="search-input w-full pl-11 pr-4 py-3 bg-navy-900/60 border border-navy-600 rounded-xl focus:border-cyan-400 outline-none text-sm font-mono text-slate-100 placeholder-slate-300 transition-all">
+            </div>
+            <div class="flex gap-3 items-center">
+                <span id="contagem" class="text-sm text-slate-300">0 cedentes</span>
+                <button onclick="exportarCSV()" class="btn-primary px-5 py-2.5 bg-gradient-to-r from-cyan-400 to-cyan-500 text-navy-900 rounded-xl text-sm font-semibold">
+                    Exportar CSV
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="max-w-[98%] mx-auto px-4 mt-4 mb-10 animate-in stagger-2">
+        <div class="glass-card rounded-2xl overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead id="thead-main">
+                        <tr class="border-b border-navy-600/50 text-left"></tr>
+                    </thead>
+                    <tbody id="tabela-cedentes"></tbody>
+                </table>
+            </div>
+            <div class="flex items-center justify-between px-4 py-3 border-t border-navy-600/50">
+                <button id="btn-prev" onclick="mudarPagina(-1)" class="px-4 py-2 text-sm border border-navy-600 rounded-xl text-slate-200 hover:border-cyan-400 hover:text-cyan-400 transition disabled:opacity-30" disabled>Anterior</button>
+                <span id="info-pagina" class="text-sm text-slate-300"></span>
+                <button id="btn-next" onclick="mudarPagina(1)" class="px-4 py-2 text-sm border border-navy-600 rounded-xl text-slate-200 hover:border-cyan-400 hover:text-cyan-400 transition disabled:opacity-30" disabled>Proximo</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div id="modal" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-navy-900/80 backdrop-blur-sm" onclick="fecharModal()"></div>
+        <div class="modal-panel absolute right-0 top-0 h-full w-full max-w-4xl bg-navy-800 shadow-2xl overflow-y-auto border-l border-navy-600/50">
+            <div class="sticky top-0 glass z-10 px-6 py-4 flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg font-bold gradient-text">Detalhe do Cedente</h2>
+                    <p id="modal-cnpj" class="text-sm text-slate-300 font-mono mt-0.5"></p>
+                </div>
+                <div class="flex gap-2">
+                <button onclick="exportarDetalheCSV()" class="btn-primary px-4 py-2 bg-gradient-to-r from-cyan-400 to-cyan-500 text-navy-900 rounded-xl text-sm font-semibold">Exportar CSV</button>
+                <button onclick="fecharModal()" class="p-2 hover:bg-navy-700 rounded-xl transition">
+                    <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+                </div>
+            </div>
+            <div id="modal-kpis" class="grid grid-cols-2 gap-4 px-6 py-4"></div>
+            <div class="px-6 pb-6">
+                <h3 class="text-sm font-semibold text-slate-300 mb-3">Cronograma por Fundo</h3>
+                <div class="overflow-x-auto rounded-xl border border-navy-600/50">
+                    <table class="w-full text-sm">
+                        <thead id="modal-thead"><tr class="border-b border-navy-600/50 text-left"></tr></thead>
+                        <tbody id="modal-fundos"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+const API = 'http://localhost:8001';
+let dados = [];
+let colsAnos = [];
+let sortCol = 'VL_TOTAL';
+let sortDir = 'desc';
+let pagina = 0;
+const POR_PAGINA = 50;
+let modalDados = { cnpj: '', cols: [], fundos: [] };
+
+function fmt(v) {
+    if (v == null || isNaN(v)) return '0';
+    return Math.round(v / 1000).toLocaleString('pt-BR');
+}
+function fmtCNPJ(c) {
+    if (!c) return '';
+    return c.replace(/\D/g, '');
+}
+function colLabel(c) {
+    return c.replace('VL_', '').replace('_OU_MAIOR', '+');
+}
+
+async function init() {
+    const rc = await fetch(`${API}/colunas`);
+    colsAnos = await rc.json();
+
+    const thead = document.querySelector('#thead-main tr');
+    thead.innerHTML = `
+        <th class="px-4 py-3.5 font-semibold text-slate-300 sticky left-0 bg-navy-800/90 backdrop-blur z-10">
+            <span class="sort-btn" data-col="CNPJ_CEDENTE" onclick="ordenar('CNPJ_CEDENTE')">CNPJ Cedente</span>
+        </th>
+        <th class="px-4 py-3.5 font-semibold text-slate-300">
+            <span class="sort-btn" data-col="NOME_CEDENTE" onclick="ordenar('NOME_CEDENTE')">Nome Cedente</span>
+        </th>
+        <th class="px-4 py-3.5 font-semibold text-slate-300 text-center">
+            <span class="sort-btn" data-col="NUM_FUNDOS" onclick="ordenar('NUM_FUNDOS')">Fundos</span>
+        </th>
+        ${colsAnos.map(c => `
+            <th class="px-4 py-3.5 font-semibold text-slate-300 text-right">
+                <span class="sort-btn" data-col="${c}" onclick="ordenar('${c}')">${colLabel(c)}</span>
+            </th>
+        `).join('')}
+        <th class="px-4 py-3.5 font-semibold text-cyan-400 text-right">
+            <span class="sort-btn desc" data-col="VL_TOTAL" onclick="ordenar('VL_TOTAL')">Total</span>
+        </th>
+    `;
+
+    await Promise.all([carregarResumo(), carregarCedentes()]);
+}
+
+async function carregarResumo() {
+    const r = await fetch(`${API}/resumo`);
+    const d = await r.json();
+    document.getElementById('kpi-header').innerHTML = `
+        <div class="glass-card rounded-xl px-5 py-3 animate-in stagger-3">
+            <div class="text-2xl font-bold gradient-text">${d.total_cedentes.toLocaleString('pt-BR')}</div>
+            <div class="text-slate-300 text-xs mt-0.5">Cedentes</div>
+        </div>
+        <div class="glass-card rounded-xl px-5 py-3 animate-in stagger-4">
+            <div class="text-2xl font-bold gradient-text">${fmt(d.total_exposicao)}</div>
+            <div class="text-slate-300 text-xs mt-0.5">Exposicao Total (R$ mil)</div>
+        </div>
+    `;
+}
+
+async function carregarCedentes(search = '') {
+    const r = await fetch(`${API}/cedentes?search=${encodeURIComponent(search)}`);
+    dados = await r.json();
+    pagina = 0;
+    aplicarOrdem();
+}
+
+function aplicarOrdem() {
+    dados.sort((a, b) => {
+        let va = a[sortCol], vb = b[sortCol];
+        if (typeof va === 'string') { va = (va||'').toLowerCase(); vb = (vb||'').toLowerCase(); }
+        if (va < vb) return sortDir === 'asc' ? -1 : 1;
+        if (va > vb) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+    });
+    renderTabela();
+}
+
+function ordenar(col) {
+    if (sortCol === col) {
+        sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortCol = col;
+        sortDir = col === 'CNPJ_CEDENTE' || col === 'NOME_CEDENTE' ? 'asc' : 'desc';
+    }
+    document.querySelectorAll('.sort-btn').forEach(b => b.className = 'sort-btn');
+    const btn = document.querySelector(`[data-col="${col}"]`);
+    if (btn) btn.className = `sort-btn ${sortDir}`;
+    aplicarOrdem();
+}
+
+function renderTabela() {
+    const inicio = pagina * POR_PAGINA;
+    const fim = Math.min(inicio + POR_PAGINA, dados.length);
+    const slice = dados.slice(inicio, fim);
+
+    document.getElementById('contagem').textContent = `${dados.length} cedentes`;
+    document.getElementById('info-pagina').textContent = dados.length > 0
+        ? `${inicio + 1}-${fim} de ${dados.length}` : 'Nenhum resultado';
+    document.getElementById('btn-prev').disabled = pagina === 0;
+    document.getElementById('btn-next').disabled = fim >= dados.length;
+
+    document.getElementById('tabela-cedentes').innerHTML = slice.map((c, idx) => `
+        <tr class="table-row border-b border-navy-600/30" onclick="abrirDetalhe('${c.CNPJ_CEDENTE}')" style="animation: fadeInUp 0.3s ease-out ${idx * 0.02}s both">
+            <td class="px-4 py-3 font-mono text-sm text-cyan-400 sticky left-0 bg-navy-800/90 backdrop-blur z-10">${fmtCNPJ(c.CNPJ_CEDENTE)}</td>
+            <td class="px-4 py-3 text-sm text-slate-200 max-w-[250px] truncate" title="${c.NOME_CEDENTE || ''}">${c.NOME_CEDENTE || 'nao encontrado'}</td>
+            <td class="px-4 py-3 text-center">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-cyan-400/10 text-cyan-400 border border-cyan-400/20">${c.NUM_FUNDOS}</span>
+            </td>
+            ${colsAnos.map(col => `<td class="px-4 py-3 text-right tabular-nums text-slate-200">${fmt(c[col])}</td>`).join('')}
+            <td class="px-4 py-3 text-right font-bold text-cyan-400 tabular-nums">${fmt(c.VL_TOTAL)}</td>
+        </tr>
+    `).join('');
+}
+
+function mudarPagina(dir) { pagina += dir; renderTabela(); }
+
+async function abrirDetalhe(cnpj) {
+    const r = await fetch(`${API}/cedentes/${cnpj}`);
+    const d = await r.json();
+    const fundos = d.fundos;
+    const cols = d.colunas;
+
+    document.getElementById('modal-cnpj').textContent = fmtCNPJ(cnpj);
+    modalDados = { cnpj, cols, fundos };
+
+    const totalExp = fundos.reduce((s, f) => s + (f.VL_TOTAL || 0), 0);
+
+    document.getElementById('modal-kpis').innerHTML = `
+        <div class="glass-card rounded-xl p-4">
+            <div class="text-2xl font-bold gradient-text">${fmt(totalExp)}</div>
+            <div class="text-xs text-slate-300 mt-1">Exposicao Total (R$ mil)</div>
+        </div>
+        <div class="glass-card rounded-xl p-4">
+            <div class="text-2xl font-bold text-slate-100">${fundos.length}</div>
+            <div class="text-xs text-slate-300 mt-1">Fundos</div>
+        </div>
+    `;
+
+    document.querySelector('#modal-thead tr').innerHTML = `
+        <th class="px-3 py-2.5 font-semibold text-slate-300 sticky left-0 bg-navy-800">Fundo</th>
+        ${cols.map(c => `<th class="px-3 py-2.5 font-semibold text-slate-300 text-right">${colLabel(c)}</th>`).join('')}
+        <th class="px-3 py-2.5 font-semibold text-cyan-400 text-right">Total</th>
+    `;
+
+    document.getElementById('modal-fundos').innerHTML = fundos.map(f => `
+        <tr class="border-b border-navy-600/30 hover:bg-navy-700/30 transition">
+            <td class="px-3 py-2 sticky left-0 bg-navy-800 max-w-[220px] truncate text-slate-200" title="${f.NOME_FUNDO || ''}">${f.NOME_FUNDO || '-'}</td>
+            ${cols.map(c => `<td class="px-3 py-2 text-right tabular-nums text-slate-200">${fmt(f[c])}</td>`).join('')}
+            <td class="px-3 py-2 text-right font-bold text-cyan-400 tabular-nums">${fmt(f.VL_TOTAL)}</td>
+        </tr>
+    `).join('');
+
+    document.getElementById('modal').classList.remove('hidden');
+}
+
+function fecharModal() { document.getElementById('modal').classList.add('hidden'); }
+
+function exportarDetalheCSV() {
+    const { cnpj, cols, fundos } = modalDados;
+    if (!fundos.length) return;
+    const header = ['NOME_FUNDO', ...cols.map(colLabel), 'TOTAL'].join(';');
+    const linhas = fundos.map(f =>
+        [`"${f.NOME_FUNDO || ''}"`, ...cols.map(c => Math.round((f[c] || 0) / 1000)), Math.round((f.VL_TOTAL || 0) / 1000)].join(';')
+    ).join('\n');
+    const blob = new Blob([header + '\n' + linhas], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `cedente_${cnpj}.csv`;
+    a.click();
+}
+
+function exportarCSV() {
+    if (!dados.length) return;
+    const header = ['CNPJ_CEDENTE', 'NOME_CEDENTE', 'NUM_FUNDOS', ...colsAnos.map(colLabel), 'TOTAL'].join(';');
+    const linhas = dados.map(c =>
+        [c.CNPJ_CEDENTE, `"${c.NOME_CEDENTE || ''}"`, c.NUM_FUNDOS, ...colsAnos.map(col => Math.round(c[col] || 0)), Math.round(c.VL_TOTAL || 0)].join(';')
+    ).join('\n');
+    const blob = new Blob([header + '\n' + linhas], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'cedentes_cronograma.csv';
+    a.click();
+}
+
+let timer;
+document.getElementById('busca').addEventListener('input', e => {
+    clearTimeout(timer);
+    timer = setTimeout(() => carregarCedentes(e.target.value), 300);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharModal(); });
+
+init();
+</script>
+</body>
+</html>

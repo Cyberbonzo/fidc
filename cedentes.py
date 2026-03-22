@@ -1,9 +1,19 @@
 import pandas as pd
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 import re
+import os
 from config import DB_URL
 
 engine = create_engine(DB_URL)
+
+
+def obter_mes_atual():
+    """Lê o mês carregado pelo carga_dados.py (arquivo .mes_atual)."""
+    meta_path = os.path.join(os.path.dirname(__file__), '.mes_atual')
+    if os.path.exists(meta_path):
+        with open(meta_path) as f:
+            return f.read().strip()
+    raise RuntimeError("Arquivo .mes_atual não encontrado. Execute carga_dados.py primeiro.")
 
 def limpar_valor(valor):
     """
@@ -26,14 +36,14 @@ def limpar_cnpj(cnpj):
     return re.sub(r'\D', '', str(cnpj))
 
 def processar_dados_cvm():
-    print("--- 🔍 INICIANDO DIAGNÓSTICO DE DADOS ---")
-    
+    yyyymm = obter_mes_atual()
+    print(f"--- PROCESSANDO DADOS DO MÊS {yyyymm} ---")
+
     try:
-        # Lendo as tabelas do MySQL
-        df_i = pd.read_sql('SELECT * FROM `inf_mensal_fidc_tab_I_202602`', engine)
-        df_v = pd.read_sql('SELECT * FROM `inf_mensal_fidc_tab_V_202602`', engine)
+        df_i = pd.read_sql(f'SELECT * FROM `inf_mensal_fidc_tab_I_{yyyymm}`', engine)
+        df_v = pd.read_sql(f'SELECT * FROM `inf_mensal_fidc_tab_V_{yyyymm}`', engine)
     except Exception as e:
-        print(f"❌ Erro ao ler tabelas: {e}")
+        print(f"Erro ao ler tabelas: {e}")
         return
 
     # PADRONIZAÇÃO: Forçamos todos os nomes de colunas para MAIÚSCULAS e removemos aspas
@@ -60,14 +70,15 @@ def processar_dados_cvm():
                 temp = df_i[cols_presentes + [col_cnpj, col_perc]].copy()
                 temp.columns = cols_presentes + ['CNPJ_CEDENTE', 'PERC_PARTICIPACAO']
                 
-                # Filtramos apenas linhas onde o CNPJ do cedente não é vazio
-                temp = temp.dropna(subset=['CNPJ_CEDENTE'])
+                # Limpeza e filtro do CNPJ do cedente
+                temp['CNPJ_CEDENTE'] = temp['CNPJ_CEDENTE'].apply(limpar_cnpj)
+                temp = temp[temp['CNPJ_CEDENTE'] != '']
                 if not temp.empty:
                     lista_cedentes.append(temp)
 
     # Evitamos o FutureWarning filtrando apenas listas que não estão vazias
     if not lista_cedentes:
-        print("❌ Nenhum cedente encontrado nos dados.")
+        print("ERRO: Nenhum cedente encontrado nos dados.")
         return
         
     df_cedentes = pd.concat(lista_cedentes, ignore_index=True)
@@ -76,49 +87,97 @@ def processar_dados_cvm():
     df_cedentes['TAB_I2_VL_CARTEIRA'] = df_cedentes['TAB_I2_VL_CARTEIRA'].apply(limpar_valor)
     df_cedentes['PERC_PARTICIPACAO'] = df_cedentes['PERC_PARTICIPACAO'].apply(limpar_valor)
 
-    # 2. MAPEAMENTO DINÂMICO DOS PRAZOS (Tabela V)
+    # 2. MAPEAMENTO DOS PRAZOS (Tabela V) - todos os 10 buckets
+    # Buckets em dias e seus limites superiores
+    buckets_dias = {
+        1: 30, 2: 60, 3: 90, 4: 120, 5: 150,
+        6: 180, 7: 360, 8: 720, 9: 1080, 10: 9999
+    }
     mapeamento_venc = {}
-    for i in range(1, 9):
+    for i in range(1, 11):
         prefixo = f'TAB_V_A{i}'
-        # Procura qualquer coluna que comece com TAB_V_A1, TAB_V_A2...
         col_encontrada = [c for c in df_v.columns if c.startswith(prefixo)]
         if col_encontrada:
             mapeamento_venc[i] = col_encontrada[0]
             df_v[mapeamento_venc[i]] = df_v[mapeamento_venc[i]].apply(limpar_valor)
-            print(f"✅ Coluna identificada para Prazo {i}: {mapeamento_venc[i]}")
 
-    # --- AJUSTE PARA O MERGE ---
-    # Para evitar colunas duplicadas (DENOM_SOCIAL_x, DENOM_SOCIAL_y),
-    # removemos da Tabela V colunas que já existem na Tabela I (exceto o CNPJ do fundo)
+    # Garantir DT_COMPTC na Tab V para calcular ano de vencimento
+    if 'DT_COMPTC' in df_v.columns:
+        df_v['DT_COMPTC'] = pd.to_datetime(df_v['DT_COMPTC'], errors='coerce')
+
     cols_para_remover = [c for c in df_v.columns if c in df_cedentes.columns and c != 'CNPJ_FUNDO_CLASSE']
     df_v_limpo = df_v.drop(columns=cols_para_remover)
 
-    # 3. O CRUZAMENTO (MERGE)
+    # 3. MERGE
     df_final = pd.merge(df_cedentes, df_v_limpo, on='CNPJ_FUNDO_CLASSE', how='inner')
-    
     if df_final.empty:
-        print("⚠️ ERRO: O cruzamento falhou. Verifique se os CNPJs dos fundos nas duas tabelas são iguais.")
+        print("ERRO: O cruzamento falhou.")
         return
 
-    # 4. CÁLCULO PONDERADO (VALOR DO PRAZO * PERCENTUAL DE PARTICIPAÇÃO)
-    for i in range(1, 9):
-        novo_nome = f'VALOR_CEDENTE_{i}'
+    # 4. CALCULO PONDERADO por bucket de dias
+    for i in range(1, 11):
+        nome = f'VL_BUCKET_{i}'
         if i in mapeamento_venc:
-            col_origem = mapeamento_venc[i]
-            df_final[novo_nome] = df_final[col_origem] * (df_final['PERC_PARTICIPACAO'] / 100)
+            df_final[nome] = df_final[mapeamento_venc[i]] * (df_final['PERC_PARTICIPACAO'] / 100)
         else:
-            df_final[novo_nome] = 0.0
+            df_final[nome] = 0.0
 
-    # 5. SALVANDO O RESULTADO NO MYSQL
-    df_final.to_sql('cronograma_cedentes', engine, if_exists='replace', index=False)
-    
-    print(f"🚀 SUCESSO! {len(df_final)} registros processados.")
-    
-    # 6. PRÉVIA SEGURA: Verificamos se a coluna existe antes de imprimir
-    print("\n--- PRÉVIA DOS CÁLCULOS (Primeiras 5 linhas) ---")
-    cols_preview = ['DENOM_SOCIAL', 'VALOR_CEDENTE_1', 'PERC_PARTICIPACAO']
-    cols_preview_existentes = [c for c in cols_preview if c in df_final.columns]
-    print(df_final[cols_preview_existentes].head())
+    # 5. AGRUPAR BUCKETS EM ANOS baseado na data de competencia
+    from datetime import timedelta
+    if 'DT_COMPTC' in df_final.columns:
+        dt_ref = df_final['DT_COMPTC'].dropna().iloc[0] if df_final['DT_COMPTC'].notna().any() else pd.Timestamp(f'{yyyymm[:4]}-{yyyymm[4:]}-01')
+    else:
+        dt_ref = pd.Timestamp(f'{yyyymm[:4]}-{yyyymm[4:]}-01')
+    ano_ref = dt_ref.year
+
+    # Mapear cada bucket de dias para um ano
+    ano_por_bucket = {}
+    for i, dias in buckets_dias.items():
+        if dias == 9999:
+            ano_por_bucket[i] = ano_ref + 4  # >1080d = ano_ref+4 ou mais
+        else:
+            dt_venc = dt_ref + timedelta(days=dias)
+            ano_por_bucket[i] = dt_venc.year
+
+    # Gerar colunas anuais
+    anos = sorted(set(ano_por_bucket.values()))
+    for ano in anos:
+        col_ano = f'VL_{ano}' if ano < ano_ref + 4 else f'VL_{ano}_OU_MAIOR'
+        buckets_do_ano = [f'VL_BUCKET_{i}' for i, a in ano_por_bucket.items() if a == ano]
+        df_final[col_ano] = df_final[buckets_do_ano].sum(axis=1)
+
+    # Coluna de total
+    cols_anos = [f'VL_{ano}' if ano < ano_ref + 4 else f'VL_{ano}_OU_MAIOR' for ano in anos]
+    df_final['VL_TOTAL'] = df_final[cols_anos].sum(axis=1)
+
+    # 6. TABELA LIMPA
+    df_limpo = df_final[['CNPJ_FUNDO_CLASSE', 'DENOM_SOCIAL', 'CNPJ_CEDENTE',
+                          'PERC_PARTICIPACAO'] + cols_anos + ['VL_TOTAL']].copy()
+
+    # Dropar cedentes nao identificados
+    df_limpo['CNPJ_CEDENTE'] = df_limpo['CNPJ_CEDENTE'].apply(limpar_cnpj)
+    df_limpo = df_limpo[
+        (df_limpo['CNPJ_CEDENTE'] != '') &
+        (df_limpo['CNPJ_CEDENTE'] != '0') &
+        (df_limpo['CNPJ_CEDENTE'] != '00000000000000') &
+        (df_limpo['CNPJ_CEDENTE'].str.strip('0') != '') &
+        (df_limpo['VL_TOTAL'] > 0)
+    ]
+
+    df_limpo = df_limpo.rename(columns={
+        'CNPJ_FUNDO_CLASSE': 'CNPJ_FUNDO',
+        'DENOM_SOCIAL': 'NOME_FUNDO',
+    })
+
+    # Salvar tabela limpa
+    with engine.connect() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS `cedentes_cronograma`"))
+        conn.commit()
+    df_limpo.to_sql('cedentes_cronograma', engine, if_exists='append', index=False)
+
+    print(f"SUCESSO! {len(df_limpo)} cedentes limpos.")
+    print(f"Colunas anuais: {cols_anos}")
+    print(df_limpo[['NOME_FUNDO', 'CNPJ_CEDENTE', 'VL_TOTAL']].head())
 
 if __name__ == "__main__":
     processar_dados_cvm()
